@@ -19,6 +19,53 @@ const PRESSED_BUTTON: Color = Color::rgba(0.35, 0.75, 0.35, 0.5);
 
 type AnimRectSource = (f32, f32, f32, f32);
 
+trait Skillable {
+    fn get_action(&self, battlefield: &Battlefield, actor: &Actor) -> Option<Box<dyn Actionable + Send + Sync + 'static>>;
+}
+
+struct DamageSkill {}
+
+impl Skillable for DamageSkill {
+    fn get_action(&self, _battlefield: &Battlefield, actor: &Actor) -> Option<Box<dyn Actionable + Send + Sync + 'static>> {
+        let target_field_pos = actor.position as isize + (1 * actor.facing);
+        if target_field_pos < 0 && target_field_pos >= MAX_FIELDS as isize {
+            return None;
+        }
+        
+        Some(Box::new(DamageAction { damage: 1, target: target_field_pos as usize }))
+    }
+}
+
+trait Actionable {
+    fn get_name(&self) -> String;
+    fn apply(&self, battlefield: &Battlefield, query: &mut Query<&mut Actor>);
+}
+
+struct DamageAction {
+    target: usize,
+    damage: isize,
+}
+
+impl Actionable for DamageAction {
+    fn get_name(&self) -> String {
+        "Damage".into()
+    }
+
+    fn apply(&self, battlefield: &Battlefield, query: &mut Query<&mut Actor>) {
+        let Some(target_id) = battlefield.fields[self.target] else {
+            return;
+        };
+        let Ok(mut actor) = query.get_mut(target_id) else {
+            return;
+        };
+        actor.health -= self.damage;
+    }
+}
+
+#[derive(Component)]
+struct ApplyActionEvent {
+    action: Box<dyn Actionable + Send + Sync + 'static>,
+}
 
 #[derive(Resource)]
 struct WorldMousePos {
@@ -27,7 +74,9 @@ struct WorldMousePos {
 }
 
 #[derive(Component)]
-struct ActionButton;
+struct ActionButton {
+    skill: Box<dyn Skillable + Send + Sync + 'static>
+}
 
 #[derive(Component)]
 struct Name(String);
@@ -36,15 +85,19 @@ struct Name(String);
 struct Player;
 
 #[derive(Component)]
-struct FieldPosition(usize);
-
-#[derive(Component)]
-struct Health(isize);
+struct Actor {
+    position: usize,
+    health: isize,
+    facing: isize,
+}
 
 #[derive(Resource)]
 struct Battlefield {
     fields: [Option<Entity>; 5]
 }
+
+#[derive(Component)]
+struct BattleFieldPosition(usize);
 
 #[derive(Component)]
 struct AnimationTimer(Timer);
@@ -85,19 +138,18 @@ struct ActorChangeFacingEvent {
     actor: Entity,
 }
 
-struct DamageActionEvent {
-    target_pos: usize,
-    damage: isize,
-}
-
 struct SpawnEnemyEvent {
     pos: usize,
     name: String,
     flip_x: bool,
 }
 
-struct ClearActorEvent {
-    actor: Entity
+fn flip_from_facing(facing: isize) -> bool {
+    facing != 1
+}
+
+fn facing_from_flip(flip: bool) -> isize {
+    if flip { -1 } else { 1 }
 }
 
 fn main() {
@@ -121,8 +173,7 @@ fn main() {
         .add_event::<ActorMovedEvent>()
         .add_event::<SpawnEnemyEvent>()
         .add_event::<ActorChangeFacingEvent>()
-        .add_event::<DamageActionEvent>()
-        .add_event::<ClearActorEvent>()
+        .add_event::<ApplyActionEvent>()
         .add_startup_system(setup)
         .add_system(spawn_enemy_event)
         .add_system(mouse_screen_to_world)
@@ -130,11 +181,12 @@ fn main() {
         .add_system(action_button_click)
         .add_system(actor_move_event)
         .add_system(actor_change_facing_event)
-        .add_system(damage_action_event)
+        .add_system(apply_skill_event)
         .add_system(battlefield_button_states)
         .add_system(update_actor_debug_text)
-        .add_system(clear_actor_event)
+        .add_system(cleanup_actors)
         .add_system(update_animation)
+        .add_system(update_sprite_facing)
         .run();
 }
 
@@ -171,9 +223,12 @@ fn setup(
                 ..default()
             },
             Player {},
-            Health(5),
+            Actor {
+                health: 5,
+                position: player_pos,
+                facing: 1,
+            },
             Name("Hero".into()),
-            FieldPosition(player_pos)
         ))
         .with_children(|parent| {
             parent.spawn((
@@ -212,7 +267,7 @@ fn setup(
                     background_color: NORMAL_BUTTON.into(),
                     ..default()
                 },
-                FieldPosition(i)
+                BattleFieldPosition(i)
             ));
     }
 
@@ -233,7 +288,7 @@ fn setup(
                 // z_index: ZIndex::Global(-10),
                 ..default()
             },
-            ActionButton
+            ActionButton { skill: Box::new(DamageSkill {}) }
         ))
         .with_children(|parent| {
             parent.spawn(ImageBundle {
@@ -280,9 +335,12 @@ fn spawn_enemy_event(
                     },
                     ..default()
                 },
-                Health(5),
                 Name(e.name.clone()),
-                FieldPosition(e.pos)
+                Actor {
+                    health: 5,
+                    position: e.pos,
+                    facing: facing_from_flip(e.flip_x)
+                },
             ))
             .with_children(|parent| {
                 parent.spawn((
@@ -305,14 +363,14 @@ fn spawn_enemy_event(
 }
 
 fn update_actor_debug_text(
-    q: Query<(&Name, &Health, &FieldPosition), Or<(Changed<Health>, Changed<FieldPosition>)>>,
+    q: Query<(&Name, &Actor), Changed<Actor>>,
     mut q_children: Query<(&mut Text, &Parent)>
 ) {
     for (mut text, parent) in q_children.iter_mut() {
-        let Ok((name, health, field_pos)) = q.get(parent.get()) else {
+        let Ok((name, actor)) = q.get(parent.get()) else {
             continue;
         };
-        text.sections[0].value = format!("{}\n{}hp\n@{}", name.0, health.0, field_pos.0);
+        text.sections[0].value = format!("{}\n{}hp\n@{}", name.0, actor.health, actor.position);
     }
 }
 
@@ -328,24 +386,22 @@ fn update_animation(
     }
 }
 
-fn clear_actor_event(
+fn cleanup_actors(
     mut commands: Commands,
     mut battlefield: ResMut<Battlefield>,
-    q: Query<&FieldPosition, With<Health>>,
-    mut ev: EventReader<ClearActorEvent>
+    q: Query<(Entity, &Actor)>,
 ) {
-    for e in ev.iter() {
-        let Ok(field_pos) = q.get(e.actor) else {
-            continue;
-        };
-        battlefield.fields[field_pos.0] = None;
-        commands.entity(e.actor).despawn_recursive();
+    for (entity, actor) in q.iter() {
+        if actor.health <= 0 {
+            commands.entity(entity).despawn_recursive();
+            battlefield.fields[actor.position] = None;
+        }
     }
 }
 
 
 fn actor_move_event(
-    mut q: Query<(&mut FieldPosition, &mut Transform)>,
+    mut q: Query<(&mut Actor, &mut Transform)>,
     mut battlefield: ResMut<Battlefield>,
     mut ev: EventReader<ActorMovedEvent>,
 ) {
@@ -353,45 +409,43 @@ fn actor_move_event(
         if battlefield.fields[e.new_pos].is_some() {
             continue;
         }
-        let Ok((mut field_pos, mut transform)) = q.get_mut(e.actor) else {
+        let Ok((mut actor, mut transform)) = q.get_mut(e.actor) else {
             continue;
         };
         battlefield.fields[e.old_pos] = None;
         battlefield.fields[e.new_pos] = Some(e.actor);
-        field_pos.0 = e.new_pos;
+        actor.position = e.new_pos;
         transform.translation.x = BATTLEFIELD_OFFSET + e.new_pos as f32 * (SPRITE_SIZE + 2.0);
     }
 }
 
 fn actor_change_facing_event(
-    mut q: Query<&mut Sprite>,
+    mut q: Query<&mut Actor>,
     mut ev: EventReader<ActorChangeFacingEvent>,
 ) {
     for e in ev.iter() {
-        let Ok(mut sprite) = q.get_mut(e.actor) else {
+        let Ok(mut actor) = q.get_mut(e.actor) else {
             continue;
         };
-        sprite.flip_x = !sprite.flip_x;
+        actor.facing = actor.facing * -1;
     }
 }
 
-fn damage_action_event(
-    mut q: Query<(Entity, &mut Health)>,
-    battlefield: Res<Battlefield>,
-    mut ev: EventReader<DamageActionEvent>,
-    mut ev_clear: EventWriter<ClearActorEvent>,
+fn update_sprite_facing(
+    mut q: Query<(&mut Sprite, &Actor), Changed<Actor>>,
+) {
+    for (mut sprite, actor) in q.iter_mut() {
+        sprite.flip_x = flip_from_facing(actor.facing);
+    };
+}
+
+fn apply_skill_event(
+    mut ev: EventReader<ApplyActionEvent>,
+    battlefield: Res<Battlefield>, 
+    mut query: Query<&mut Actor>
 ) {
     for e in ev.iter() {
-        let Some(target_entity) = battlefield.fields[e.target_pos] else {
-            continue;
-        };
-        let Ok((entity, mut health)) = q.get_mut(target_entity) else {
-            continue;
-        };
-        health.0 -= e.damage;
-        if health.0 <= 0 {
-            ev_clear.send(ClearActorEvent { actor: entity });
-        }
+        e.action.apply(&battlefield, &mut query);
     }
 }
 
@@ -419,10 +473,10 @@ fn mouse_screen_to_world(
 
 fn battlefield_button_click(
     mut interaction_query: Query<
-        (&Interaction, &FieldPosition),
+        (&Interaction, &BattleFieldPosition),
         (Changed<Interaction>, With<Button>),
     >,
-    q: Query<(Entity, &FieldPosition), With<Player>>,
+    q: Query<(Entity, &Actor), With<Player>>,
     mut ev_moved: EventWriter<ActorMovedEvent>,
     mut ev_facing: EventWriter<ActorChangeFacingEvent>,
 ) {
@@ -430,17 +484,17 @@ fn battlefield_button_click(
         let Interaction::Clicked = *interaction else {
             continue;
         };
-        let Ok((entity_id, field_pos)) = q.get_single() else {
+        let Ok((entity_id, actor)) = q.get_single() else {
             return;
         };
-        if clicked_field_pos.0 == field_pos.0 {
+        if clicked_field_pos.0 == actor.position {
             ev_facing.send(ActorChangeFacingEvent { actor: entity_id });
         }
-        if clicked_field_pos.0 > field_pos.0 {
-            ev_moved.send(ActorMovedEvent { actor: entity_id, old_pos: field_pos.0, new_pos: field_pos.0 + 1 });
+        if clicked_field_pos.0 > actor.position {
+            ev_moved.send(ActorMovedEvent { actor: entity_id, old_pos: actor.position, new_pos: actor.position + 1 });
         }
-        if clicked_field_pos.0 < field_pos.0 {
-            ev_moved.send(ActorMovedEvent { actor: entity_id, old_pos: field_pos.0, new_pos: field_pos.0 - 1 });
+        if clicked_field_pos.0 < actor.position {
+            ev_moved.send(ActorMovedEvent { actor: entity_id, old_pos: actor.position, new_pos: actor.position - 1 });
         }
     }
 }
@@ -450,23 +504,22 @@ fn action_button_click(
         (&Interaction, &ActionButton),
         (Changed<Interaction>, With<Button>),
     >,
-    q: Query<(Entity, &FieldPosition, &Sprite), With<Player>>,
-    mut ev_damage: EventWriter<DamageActionEvent>,
+    battlefield: Res<Battlefield>,
+    q: Query<&Actor, With<Player>>,
+    mut ev_damage: EventWriter<ApplyActionEvent>,
 ) {
-    for (interaction, _action) in &mut interaction_query {
+    for (interaction, action_button) in &mut interaction_query {
         let Interaction::Clicked = *interaction else {
             continue;
         };
-        let Ok((_entity_id, field_pos, sprite)) = q.get_single() else {
-            return;
+        let Ok(actor) = q.get_single() else {
+            continue;
+        };
+        let Some(action) = action_button.skill.get_action(&battlefield, actor) else {
+            continue;
         };
 
-        let signum: isize = if sprite.flip_x { -1 } else { 1 };
-        let target_field_pos = field_pos.0 as isize + (1 * signum);
-
-        if target_field_pos >= 0 && target_field_pos < MAX_FIELDS as isize {
-            ev_damage.send(DamageActionEvent { target_pos: target_field_pos as usize, damage: 1 });
-        }
+        ev_damage.send(ApplyActionEvent { action });
     }
 }
 
