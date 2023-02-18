@@ -19,14 +19,14 @@ const PRESSED_BUTTON: Color = Color::rgba(0.35, 0.75, 0.35, 0.5);
 
 type AnimRectSource = (f32, f32, f32, f32);
 
-trait Skillable {
-    fn get_action(&self, battlefield: &Battlefield, actor: &Actor) -> Option<Box<dyn Actionable + Send + Sync + 'static>>;
+trait Skillable: Send + Sync + 'static {
+    fn get_action(&self, battlefield: &Battlefield, actor: &Actor) -> Option<Box<dyn Actionable>>;
 }
 
 struct DamageSkill {}
 
 impl Skillable for DamageSkill {
-    fn get_action(&self, _battlefield: &Battlefield, actor: &Actor) -> Option<Box<dyn Actionable + Send + Sync + 'static>> {
+    fn get_action(&self, _battlefield: &Battlefield, actor: &Actor) -> Option<Box<dyn Actionable>> {
         let target_field_pos = actor.position as isize + (1 * actor.facing);
         if target_field_pos < 0 && target_field_pos >= MAX_FIELDS as isize {
             return None;
@@ -36,7 +36,7 @@ impl Skillable for DamageSkill {
     }
 }
 
-trait Actionable {
+trait Actionable: Send + Sync + 'static {
     fn get_name(&self) -> String;
     fn apply(&self, battlefield: &Battlefield, query: &mut Query<&mut Actor>);
 }
@@ -64,7 +64,7 @@ impl Actionable for DamageAction {
 
 #[derive(Component)]
 struct ApplyActionEvent {
-    action: Box<dyn Actionable + Send + Sync + 'static>,
+    action: Box<dyn Actionable>,
 }
 
 #[derive(Resource)]
@@ -75,7 +75,7 @@ struct WorldMousePos {
 
 #[derive(Component)]
 struct ActionButton {
-    skill: Box<dyn Skillable + Send + Sync + 'static>
+    skill: Box<dyn Skillable>
 }
 
 #[derive(Component)]
