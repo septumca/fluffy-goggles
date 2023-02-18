@@ -8,6 +8,10 @@ const W_WIDTH: f32 = 640.0;
 const BATTLEFIELD_OFFSET: f32 = -200.0;
 const W_HEIGHT: f32 = 480.0;
 
+const HEROES_SPRITE_SHEET: &'static str = "heroes.png";
+const UNDER_CONSTRUCTION_SPRITE: &'static str = "under-construction.png";
+const FONT_SIZE: f32 = 8.0;
+
 const NORMAL_BUTTON: Color = Color::rgba(0.0, 0.0, 0.0, 0.2);
 const HOVERED_BUTTON: Color = Color::rgba(0.35, 0.35, 0.75, 0.5);
 const PRESSED_BUTTON: Color = Color::rgba(0.35, 0.75, 0.35, 0.5);
@@ -144,19 +148,19 @@ fn setup(
     let font = asset_server.load("QuinqueFive.ttf");
     let text_style = TextStyle {
         font,
-        font_size: 8.0,
+        font_size: FONT_SIZE,
         color: Color::WHITE,
     };
-    let text_alignment = TextAlignment::CENTER;
+    let text_alignment = TextAlignment::CENTER_RIGHT;
     let player_pos = 0;
 
     commands
         .spawn((
             SpriteBundle {
-                texture: asset_server.load("tile_0096.png"),
+                texture: asset_server.load(HEROES_SPRITE_SHEET),
                 sprite: Sprite {
                     custom_size: Some(vec2(SPRITE_SIZE, SPRITE_SIZE)),
-                    rect: Some(Rect::new(0.0, 0.0, SCR_SPRITE_SIZE, SCR_SPRITE_SIZE)),
+                    rect: Some(Rect::new(4.0 * SCR_SPRITE_SIZE, 0.0, 5.0 * SCR_SPRITE_SIZE, SCR_SPRITE_SIZE)),
                     flip_x: false,
                     ..default()
                 },
@@ -168,17 +172,17 @@ fn setup(
             },
             Player {},
             Health(5),
-            Name("Red".into()),
+            Name("Hero".into()),
             FieldPosition(player_pos)
         ))
         .with_children(|parent| {
             parent.spawn((
                 Text2dBundle {
-                    text: Text::from_section("Red", text_style.clone())
+                    text: Text::from_section("", text_style.clone())
                         .with_alignment(text_alignment),
                     transform: Transform::from_xyz(
                         0.0,
-                        SPRITE_SIZE_HALVED + 2.0,
+                        SPRITE_SIZE_HALVED + FONT_SIZE * 2.0,
                         2.0,
                     ),
                     ..default()
@@ -186,7 +190,7 @@ fn setup(
             ));
         });
 
-    ev.send(SpawnEnemyEvent { pos: 3, name: "Green".into(), flip_x: true });
+    ev.send(SpawnEnemyEvent { pos: 3, name: "Orc".into(), flip_x: true });
 
     let top = (W_HEIGHT - SPRITE_SIZE) / 2.0;
     for i in 0..MAX_FIELDS {
@@ -233,7 +237,7 @@ fn setup(
         ))
         .with_children(|parent| {
             parent.spawn(ImageBundle {
-                image: asset_server.load("tile_0104.png").into(),
+                image: asset_server.load(UNDER_CONSTRUCTION_SPRITE).into(),
                 z_index: ZIndex::Global(-10),
                 ..default()
             });
@@ -246,13 +250,13 @@ fn spawn_enemy_event(
     mut battlefield: ResMut<Battlefield>,
     mut ev: EventReader<SpawnEnemyEvent>,
 ) {
-    let font = asset_server.get_handle("QuinqueFive.ttf");
+    let font = asset_server.load("QuinqueFive.ttf");
     let text_style = TextStyle {
         font,
-        font_size: 8.0,
+        font_size: FONT_SIZE,
         color: Color::WHITE,
     };
-    let text_alignment = TextAlignment::CENTER;
+    let text_alignment = TextAlignment::CENTER_RIGHT;
 
     for e in ev.iter() {
         if battlefield.fields[e.pos].is_some() {
@@ -263,10 +267,10 @@ fn spawn_enemy_event(
         let entity_id = commands
             .spawn((
                 SpriteBundle {
-                    texture: asset_server.load("tile_0109.png"),
+                    texture: asset_server.load(HEROES_SPRITE_SHEET),
                     sprite: Sprite {
                         custom_size: Some(vec2(SPRITE_SIZE, SPRITE_SIZE)),
-                        rect: Some(Rect::new(0.0, 0.0, SCR_SPRITE_SIZE, SCR_SPRITE_SIZE)),
+                        rect: Some(Rect::new(3.0 * SCR_SPRITE_SIZE, 2.0 * SCR_SPRITE_SIZE, 4.0 * SCR_SPRITE_SIZE, 3.0 * SCR_SPRITE_SIZE)),
                         flip_x: e.flip_x,
                         ..default()
                     },
@@ -283,11 +287,11 @@ fn spawn_enemy_event(
             .with_children(|parent| {
                 parent.spawn((
                     Text2dBundle {
-                        text: Text::from_section(e.name.clone(), text_style.clone())
+                        text: Text::from_section("", text_style.clone())
                             .with_alignment(text_alignment),
                         transform: Transform::from_xyz(
                             0.0,
-                            SPRITE_SIZE_HALVED + 2.0,
+                            SPRITE_SIZE_HALVED + FONT_SIZE * 2.0,
                             2.0,
                         ),
                         ..default()
@@ -308,7 +312,7 @@ fn update_actor_debug_text(
         let Ok((name, health, field_pos)) = q.get(parent.get()) else {
             continue;
         };
-        text.sections[0].value = format!("{}-{}hp at {}", name.0, health.0, field_pos.0);
+        text.sections[0].value = format!("{}\n{}hp\n@{}", name.0, health.0, field_pos.0);
     }
 }
 
