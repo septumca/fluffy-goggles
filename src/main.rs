@@ -1,6 +1,6 @@
 use std::{collections::{BTreeMap}};
 
-use action::{SloppyJab, RegainStance, Action};
+use action::{SloppyJab, RegainStance, Action, Regeneration};
 use macroquad::{prelude::*};
 use token::{TokenContainer, Token, TOKEN_FONT_SIZE, TOKEN_SPRITE_SIZE};
 
@@ -13,9 +13,23 @@ mod effect;
 const SRC_SPRITE_SIZE: f32 = 16.0;
 const SPRITE_SIZE: f32 = 128.0;
 const FONT_SIZE: f32 = 40.0;
+const ACTIONS_PER_ROUND: u8 = 2;
 
 type Position = (f32, f32);
 
+enum Triggers {
+    TokensAdded(u8),
+    TokensRemoved(u8),
+    RoundStart,
+    RoundEnd,
+    TurnStart,
+    TurnEnd,
+}
+
+enum ModifierType {
+    Buff,
+    Debuff
+}
 
 pub struct Actor {
     name: String,
@@ -72,40 +86,76 @@ async fn main() {
     under_construction_texture.set_filter(FilterMode::Nearest);
     player_texture.set_filter(FilterMode::Nearest);
     enemy_texture.set_filter(FilterMode::Nearest);
-    let mut a1 = Actor::new("A1".into(), 15, 10, 2);
-    let mut a2 = Actor::new("A2".into(), 15, 10, 2);
+    let mut player_actor = Actor::new("A1".into(), 15, 10, ACTIONS_PER_ROUND);
+    let mut enemy_actor = Actor::new("A2".into(), 15, 10, ACTIONS_PER_ROUND);
     let sloppy_jab = SloppyJab::new();
     let regain_stance = RegainStance::new();
+    let regeneration = Regeneration::new();
+
+    let mut is_player_turn = true;
 
     loop {
         clear_background(GRAY);
 
-        if ui::create_skill_button(under_construction_texture, vec2(16., 16.), sloppy_jab.get_name()) {
-            if sloppy_jab.can_perform(&a1, &a2) {
-                let (source_effects, target_effects) = sloppy_jab.perform();
-                for e in source_effects {
-                    e.execute(&mut a1);
-                }
-                for e in target_effects {
-                    e.execute(&mut a2);
-                }
+        let mut action: Option<Box<&dyn Action>> = None;
+
+        let (mut source, mut target) = if is_player_turn {
+            (&mut player_actor, &mut enemy_actor)
+        } else {
+            (&mut enemy_actor, &mut player_actor)
+        };
+
+        if let Some(performed_action) = ui::action_clicked(
+            under_construction_texture,
+            vec2(16., 16.),
+            Box::new(&sloppy_jab),
+            &source,
+            &target
+        ) {
+            if is_player_turn {
+                action = Some(performed_action);
             }
         }
 
-        if ui::create_skill_button(under_construction_texture, vec2(96., 16.), regain_stance.get_name()) {
-            if regain_stance.can_perform(&a1, &a2) {
-                let (source_effects, target_effects) = regain_stance.perform();
-                for e in source_effects {
-                    e.execute(&mut a1);
-                }
-                for e in target_effects {
-                    e.execute(&mut a2);
-                }
+        if let Some(performed_action) = ui::action_clicked(
+            under_construction_texture,
+            vec2(96., 16.),
+            Box::new(&regain_stance),
+            &source,
+            &target
+        ) {
+            if is_player_turn {
+                action = Some(performed_action);
             }
         }
 
-        a1.draw(&player_texture, (150., 200.), &under_construction_texture);
-        a2.draw(&enemy_texture, (450., 200.), &under_construction_texture);
+        if !is_player_turn {
+            println!("AI takes it's turn!");
+            action = Some(Box::new(&regeneration)); //TODO: make and plug AI here
+        }
+
+        if let Some(action) = action {
+            let (source_effects, target_effects) = action.perform();
+            for e in source_effects {
+                e.execute(&mut source);
+            }
+            for e in target_effects {
+                e.execute(&mut target);
+            }
+
+            source.action_per_round = source.action_per_round - 1;
+            if source.action_per_round == 0 {
+                //round end here
+                if !is_player_turn {
+                    //turn ends here, AI goes always second
+                }
+                is_player_turn = !is_player_turn;
+                source.action_per_round = ACTIONS_PER_ROUND;
+            }
+        }
+
+        player_actor.draw(&player_texture, (150., 200.), &under_construction_texture);
+        enemy_actor.draw(&enemy_texture, (450., 200.), &under_construction_texture);
 
         next_frame().await
     }
