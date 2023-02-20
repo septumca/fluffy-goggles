@@ -1,172 +1,111 @@
-use std::collections::HashMap;
+use std::{collections::{BTreeMap}};
 
-use macroquad::prelude::*;
+use action::{SloppyJab, RegainStance, Action};
+use macroquad::{prelude::*};
+use token::{TokenContainer, Token, TOKEN_FONT_SIZE, TOKEN_SPRITE_SIZE};
 
 mod ui;
+mod action;
+mod damage;
+mod token;
+mod effect;
 
-fn can_perform_skill(data: &SkillData, source: &Actor, target: &Actor) -> bool {
-    data.required_tokens_source
-        .iter()
-        .all(|(key, val)| {
-            source.tokens.get(key).unwrap_or(&0) >= val
-        })
-    || 
-    data.required_tokens_target
-        .iter()
-        .all(|(key, val)| {
-            target.tokens.get(key).unwrap_or(&0) >= val
-        })
-}
+const SRC_SPRITE_SIZE: f32 = 16.0;
+const SPRITE_SIZE: f32 = 128.0;
+const FONT_SIZE: f32 = 40.0;
 
-#[derive(Hash, Eq, PartialEq, Debug)]
-enum Token {
-    Unstability,
-    WideOpen,
-    Block,
-    Dodge,
-    Counter,
-    Stamina
-}
+type Position = (f32, f32);
 
-type TokenContainer = HashMap<Token, usize>;
 
-struct DmgRange<T> {
-    low: T,
-    high: T,
-}
-
-impl<T> DmgRange<T> {
-    fn new(low: T, high: T) -> Self {
-        Self { low, high }
-    }
-}
-
-struct Actor {
+pub struct Actor {
     name: String,
-    health: isize,
+    action_per_round: u8,
     tokens: TokenContainer
 }
 
-trait Skill {
-    fn perform(&self) -> Box<dyn Effect>;
-}
-
-trait Effect {
-    fn execute(&self, source: &mut Actor, target: &mut Actor);
-}
-
-struct SloppyJabEffect {
-    damage: usize,
-}
-
-struct RegainStanceEffect {}
-
-impl Effect for SloppyJabEffect {
-    fn execute(&self, source: &mut Actor, target: &mut Actor) {
-        
-    }
-}
-
-impl Effect for RegainStanceEffect {
-    fn execute(&self, source: &mut Actor, target: &mut Actor) {
-        
-    }
-}
-
-struct SkillData {
-    name: String,
-    required_tokens_source: TokenContainer,
-    required_tokens_target: TokenContainer,
-}
-
-impl SkillData {
-    fn with_name(name: String) -> Self {
-        Self { 
+impl Actor {
+    fn new(name: String, health: u8, stamina: u8, action_per_round: u8) -> Self {
+        Self {
             name,
-            required_tokens_source: HashMap::new(), 
-            required_tokens_target: HashMap::new()
+            action_per_round,
+            tokens: BTreeMap::from([
+                (Token::Health, health),
+                (Token::Stamina, stamina),
+            ])
         }
     }
-}
 
-struct SloppyJab {
-    damage: DmgRange<usize>,
-    data: SkillData
-}
-
-impl SloppyJab {
-    fn new() -> Self {
-        Self {
-            damage: DmgRange { low: 1, high: 4 }, 
-            data: SkillData::with_name("Sloppy Jab".into())
+    fn draw(&self, texture: &Texture2D, position: Position, token_texture: &Texture2D) {
+        draw_text(&self.name, position.0, position.1 - FONT_SIZE / 3., FONT_SIZE, WHITE);
+        draw_texture_ex(
+            *texture,
+            position.0,
+            position.1,
+            WHITE,
+            DrawTextureParams {
+                dest_size: Some(vec2(SPRITE_SIZE, SPRITE_SIZE)),
+                ..Default::default()
+             }
+        );
+        let mut offset = SPRITE_SIZE + 4.0;
+        for (token, value) in &self.tokens {
+            let x = position.0;
+            let y = position.1 + offset;
+            token.draw((x, y), token_texture);
+            draw_text(&format!("{:?} x{}", token, value), x + TOKEN_SPRITE_SIZE + 2.0, y + TOKEN_SPRITE_SIZE - 4.0, FONT_SIZE, WHITE);
+            offset += (TOKEN_FONT_SIZE * 2.5) + 4.0;
         }
-    }
-}
-
-impl Skill for SloppyJab {
-    fn perform(&self) -> Box<dyn Effect> {
-        Box::new(SloppyJabEffect { damage: 1 }) //generate random number here
-    }
-}
-
-struct RegainStance {
-    data: SkillData
-}
-
-impl RegainStance {
-    fn new() -> Self {
-        Self {
-            data: SkillData::with_name("Regain Stance".into())
-        }
-    }
-}
-
-impl Skill for RegainStance {
-    fn perform(&self) -> Box<dyn Effect> {
-        Box::new(RegainStanceEffect {})
     }
 }
 
 
 #[macroquad::main("fluffy-goggles")]
 async fn main() {
+    let sprite_sheet = Image::from_file_with_format(
+        include_bytes!("../assets/colored-transparent_packed.png"),
+        Some(ImageFormat::Png),
+    );
+
+    let under_construction_texture = Texture2D::from_image(&sprite_sheet.sub_image(Rect::new(35.0 * SRC_SPRITE_SIZE, 21.0 * SRC_SPRITE_SIZE, SRC_SPRITE_SIZE, SRC_SPRITE_SIZE)));
+    let player_texture = Texture2D::from_image(&sprite_sheet.sub_image(Rect::new(30.0 * SRC_SPRITE_SIZE, 0.0 * SRC_SPRITE_SIZE, SRC_SPRITE_SIZE, SRC_SPRITE_SIZE)));
+    let enemy_texture = Texture2D::from_image(&sprite_sheet.sub_image(Rect::new(26.0 * SRC_SPRITE_SIZE, 2.0 * SRC_SPRITE_SIZE, SRC_SPRITE_SIZE, SRC_SPRITE_SIZE)));
+    under_construction_texture.set_filter(FilterMode::Nearest);
+    player_texture.set_filter(FilterMode::Nearest);
+    enemy_texture.set_filter(FilterMode::Nearest);
+    let mut a1 = Actor::new("A1".into(), 15, 10, 2);
+    let mut a2 = Actor::new("A2".into(), 15, 10, 2);
+    let sloppy_jab = SloppyJab::new();
+    let regain_stance = RegainStance::new();
+
     loop {
         clear_background(GRAY);
 
-        let mut a1 = Actor {
-            name: "A1".into(),
-            health: 5,
-            tokens: HashMap::new(),
-        };
-
-        let mut a2 = Actor {
-            name: "A2".into(),
-            health: 5,
-            tokens: HashMap::new(),
-        };
-
-        let sloppy_jab = SloppyJab::new();
-        let regain_stance = RegainStance::new();
-
-        let texture = Texture2D::from_file_with_format(
-            include_bytes!("../assets/under-construction.png"),
-            None,
-        );
-        texture.set_filter(FilterMode::Nearest);
-        
-        if ui::create_skill_button(texture, vec2(16., 16.), sloppy_jab.data.name.clone()) {
-            if can_perform_skill(&sloppy_jab.data, &a1, &a2) {
-                let effect = sloppy_jab.perform();
-                effect.execute(&mut a1, &mut a2);
+        if ui::create_skill_button(under_construction_texture, vec2(16., 16.), sloppy_jab.get_name()) {
+            if sloppy_jab.can_perform(&a1, &a2) {
+                let (source_effects, target_effects) = sloppy_jab.perform();
+                for e in source_effects {
+                    e.execute(&mut a1);
+                }
+                for e in target_effects {
+                    e.execute(&mut a2);
+                }
             }
         }
 
-        if ui::create_skill_button(texture, vec2(96., 16.), regain_stance.data.name.clone()) {
-            if can_perform_skill(&regain_stance.data, &a1, &a2) {
-                let effect = regain_stance.perform();
-                effect.execute(&mut a1, &mut a2);
+        if ui::create_skill_button(under_construction_texture, vec2(96., 16.), regain_stance.get_name()) {
+            if regain_stance.can_perform(&a1, &a2) {
+                let (source_effects, target_effects) = regain_stance.perform();
+                for e in source_effects {
+                    e.execute(&mut a1);
+                }
+                for e in target_effects {
+                    e.execute(&mut a2);
+                }
             }
         }
+
+        a1.draw(&player_texture, (150., 200.), &under_construction_texture);
+        a2.draw(&enemy_texture, (450., 200.), &under_construction_texture);
 
         next_frame().await
     }
