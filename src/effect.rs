@@ -6,48 +6,42 @@ pub trait Effect {
     fn execute(&self, actor: &mut Actor);
 }
 
-pub struct AddTokenEffect {
+pub struct GenericEffectValue {
     token: Token,
-    value: u8,
+    value: u8
 }
 
-impl AddTokenEffect {
+impl GenericEffectValue {
     pub fn new(token: Token, value: u8) -> Self {
         Self { token, value }
     }
 }
 
-impl Effect for AddTokenEffect {
+pub enum GenericEffect {
+    AddToken(GenericEffectValue),
+    RemoveToken(GenericEffectValue)
+}
+
+impl Effect for GenericEffect {
     fn execute(&self, actor: &mut Actor) {
-        if let Some(value) = actor.tokens.get_mut(&self.token) {
-            *value = *value + self.value;
-        } else {
-            actor.tokens.insert(self.token.clone(), self.value);
-        }
-    }
-}
-
-pub struct RemoveTokenEffect {
-    token: Token,
-    value: u8,
-}
-
-impl RemoveTokenEffect {
-    pub fn new(token: Token, value: u8) -> Self {
-        Self { token, value }
-    }
-}
-
-
-impl Effect for RemoveTokenEffect {
-    fn execute(&self, actor: &mut Actor) {
-        let Some(value) = actor.tokens.get_mut(&self.token) else {
-            return;
-        };
-        if *value > self.value {
-            *value = *value - self.value;
-        } else {
-            let _ = actor.tokens.remove(&self.token);
+        match self {
+            Self::AddToken(tv) => {
+                if let Some(value) = actor.tokens.get_mut(&tv.token) {
+                    *value = *value + tv.value;
+                } else {
+                    actor.tokens.insert(tv.token.clone(), tv.value);
+                }
+            },
+            Self::RemoveToken(tv) => {
+                let Some(value) = actor.tokens.get_mut(&tv.token) else {
+                    return;
+                };
+                if *value > tv.value {
+                    *value = *value - tv.value;
+                } else {
+                    let _ = actor.tokens.remove(&tv.token);
+                }
+            }
         }
     }
 }

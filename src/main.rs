@@ -72,6 +72,29 @@ impl Actor {
     }
 }
 
+#[derive(Debug)]
+enum CombatState {
+    PlayerTurn(u8),
+    AiTurn(u8),
+}
+
+impl CombatState {
+    fn get_next_state(&self) -> CombatState {
+        match self {
+            Self::PlayerTurn(n) if *n > 1 => Self::PlayerTurn(n-1),
+            Self::PlayerTurn(_) => Self::AiTurn(ACTIONS_PER_ROUND),
+            Self::AiTurn(n) if *n > 1 => Self::AiTurn(n-1),
+            Self::AiTurn(_) => Self::PlayerTurn(ACTIONS_PER_ROUND),
+        }
+    }
+
+    fn get_turn_order<'a>(&self, player_actor: &'a mut Actor, ai_actor: &'a mut Actor) -> (&'a mut Actor, &'a mut Actor) {
+        match self {
+            Self::PlayerTurn(_) => (player_actor, ai_actor),
+            Self::AiTurn(_) => (ai_actor, player_actor)
+        }
+    }
+}
 
 #[macroquad::main("fluffy-goggles")]
 async fn main() {
@@ -92,18 +115,13 @@ async fn main() {
     let regain_stance = RegainStance::new();
     let regeneration = Regeneration::new();
 
-    let mut is_player_turn = true;
+    let mut combat_state = CombatState::PlayerTurn(player_actor.action_per_round);
 
     loop {
         clear_background(GRAY);
 
-        let mut action: Option<Box<&dyn Action>> = None;
-
-        let (mut source, mut target) = if is_player_turn {
-            (&mut player_actor, &mut enemy_actor)
-        } else {
-            (&mut enemy_actor, &mut player_actor)
-        };
+        let mut player_actions: [Option<Box<&dyn Action>>; 2] = [None, None];
+        let (mut source, mut target) = combat_state.get_turn_order(&mut player_actor, &mut enemy_actor);
 
         if let Some(performed_action) = ui::action_clicked(
             under_construction_texture,
@@ -112,9 +130,7 @@ async fn main() {
             &source,
             &target
         ) {
-            if is_player_turn {
-                action = Some(performed_action);
-            }
+            player_actions[0] = Some(performed_action);
         }
 
         if let Some(performed_action) = ui::action_clicked(
@@ -124,15 +140,18 @@ async fn main() {
             &source,
             &target
         ) {
-            if is_player_turn {
-                action = Some(performed_action);
-            }
+            player_actions[1] = Some(performed_action);
         }
 
-        if !is_player_turn {
-            println!("AI takes it's turn!");
-            action = Some(Box::new(&regeneration)); //TODO: make and plug AI here
-        }
+        let action: Option<Box<&dyn Action>> = match combat_state {
+            CombatState::PlayerTurn(_) => {
+                player_actions.into_iter().find(|i| i.is_some()).unwrap_or(None)
+            },
+            CombatState::AiTurn(_) => {
+                println!("AI takes it's turn!");
+                Some(Box::new(&regeneration)) //TODO: make and plug AI here
+            }
+        };
 
         if let Some(action) = action {
             let (source_effects, target_effects) = action.perform();
@@ -142,18 +161,10 @@ async fn main() {
             for e in target_effects {
                 e.execute(&mut target);
             }
-
-            source.action_per_round = source.action_per_round - 1;
-            if source.action_per_round == 0 {
-                //round end here
-                if !is_player_turn {
-                    //turn ends here, AI goes always second
-                }
-                is_player_turn = !is_player_turn;
-                source.action_per_round = ACTIONS_PER_ROUND;
-            }
+            combat_state = combat_state.get_next_state();
         }
 
+        draw_text(&format!("{:?}", combat_state), 300.0, 150.0, FONT_SIZE, WHITE);
         player_actor.draw(&player_texture, (150., 200.), &under_construction_texture);
         enemy_actor.draw(&enemy_texture, (450., 200.), &under_construction_texture);
 

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::{effect::{EffectsToPerform, AddTokenEffect, RemoveTokenEffect}, token::{TokenContainer, Token}, damage::DmgRange, Actor};
+use crate::{effect::{EffectsToPerform, GenericEffectValue, GenericEffect}, token::{TokenContainer, Token}, damage::DmgRange, Actor};
 
 
 fn can_perform_action(data: &ActionData, source: &Actor, target: &Actor) -> bool {
@@ -65,11 +65,11 @@ impl Action for SloppyJab {
     fn perform(&self) -> EffectsToPerform {
         (
             vec![
-                Box::new(AddTokenEffect::new(Token::Unstability, 1)),
-                Box::new(RemoveTokenEffect::new(Token::Stamina, 1)),
+                Box::new(GenericEffect::AddToken(GenericEffectValue::new(Token::Unstability, 1))),
+                Box::new(GenericEffect::RemoveToken(GenericEffectValue::new(Token::Stamina, 1))),
             ],
             vec![
-                Box::new(AddTokenEffect::new(Token::Damage, self.damage.generate())),
+                Box::new(GenericEffect::AddToken(GenericEffectValue::new(Token::Damage, self.damage.generate()))),
             ],
         )
     }
@@ -99,7 +99,7 @@ impl Action for RegainStance {
     fn perform(&self) -> EffectsToPerform {
         (
             vec![
-                Box::new(RemoveTokenEffect::new(Token::Unstability, u8::MAX)),
+                Box::new(GenericEffect::RemoveToken(GenericEffectValue::new(Token::Unstability, u8::MAX))),
             ],
             vec![],
         )
@@ -130,7 +130,7 @@ impl Action for Regeneration {
     fn perform(&self) -> EffectsToPerform {
         (
             vec![
-                Box::new(RemoveTokenEffect::new(Token::Damage, 2)),
+                Box::new(GenericEffect::RemoveToken(GenericEffectValue::new(Token::Damage, 2))),
             ],
             vec![],
         )
