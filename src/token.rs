@@ -10,6 +10,26 @@ pub const TOKEN_FONT_SIZE: f32 = 12.0;
 pub type TokenContainer = BTreeMap<Token, u8>;
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, PartialOrd, Ord)]
+pub struct TokenWithValue {
+    token: Token,
+    value: u8
+}
+
+impl TokenWithValue {
+    pub fn new(token: Token, value: u8) -> Self {
+        Self { token, value }
+    }
+
+    pub fn value(&self) -> u8 {
+        self.value
+    }
+
+    pub fn token(&self) -> &Token {
+        &self.token
+    }
+}
+
+#[derive(Hash, Eq, PartialEq, Debug, Clone, PartialOrd, Ord)]
 pub enum Token {
     Health,
     Damage,

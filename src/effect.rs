@@ -1,45 +1,34 @@
-use crate::{Actor, token::Token};
+use crate::{token::{TokenWithValue, TokenContainer}};
 
 pub type EffectsToPerform =  (Vec<Box<dyn Effect>>, Vec<Box<dyn Effect>>);
 
 pub trait Effect {
-    fn execute(&self, actor: &mut Actor);
-}
-
-pub struct GenericEffectValue {
-    token: Token,
-    value: u8
-}
-
-impl GenericEffectValue {
-    pub fn new(token: Token, value: u8) -> Self {
-        Self { token, value }
-    }
+    fn execute(&self, tokens: &mut TokenContainer);
 }
 
 pub enum GenericEffect {
-    AddToken(GenericEffectValue),
-    RemoveToken(GenericEffectValue)
+    AddToken(TokenWithValue),
+    RemoveToken(TokenWithValue)
 }
 
 impl Effect for GenericEffect {
-    fn execute(&self, actor: &mut Actor) {
+    fn execute(&self, tokens: &mut TokenContainer) {
         match self {
             Self::AddToken(tv) => {
-                if let Some(value) = actor.tokens.get_mut(&tv.token) {
-                    *value = *value + tv.value;
+                if let Some(value) = tokens.get_mut(&tv.token()) {
+                    *value = *value + tv.value();
                 } else {
-                    actor.tokens.insert(tv.token.clone(), tv.value);
+                    tokens.insert(tv.token().clone(), tv.value());
                 }
             },
             Self::RemoveToken(tv) => {
-                let Some(value) = actor.tokens.get_mut(&tv.token) else {
+                let Some(value) = tokens.get_mut(&tv.token()) else {
                     return;
                 };
-                if *value > tv.value {
-                    *value = *value - tv.value;
+                if *value > tv.value() {
+                    *value = *value - tv.value();
                 } else {
-                    let _ = actor.tokens.remove(&tv.token);
+                    let _ = tokens.remove(&tv.token());
                 }
             }
         }

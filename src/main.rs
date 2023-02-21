@@ -3,12 +3,14 @@ use std::{collections::{BTreeMap}};
 use action::{SloppyJab, RegainStance, Action, Regeneration};
 use macroquad::{prelude::*};
 use token::{TokenContainer, Token, TOKEN_FONT_SIZE, TOKEN_SPRITE_SIZE};
+use trigger::{TriggerContainer, ApplyDamageTrigger};
 
 mod ui;
 mod action;
 mod damage;
 mod token;
 mod effect;
+mod trigger;
 
 const SRC_SPRITE_SIZE: f32 = 16.0;
 const SPRITE_SIZE: f32 = 128.0;
@@ -17,35 +19,26 @@ const ACTIONS_PER_ROUND: u8 = 2;
 
 type Position = (f32, f32);
 
-enum Triggers {
-    TokensAdded(u8),
-    TokensRemoved(u8),
-    RoundStart,
-    RoundEnd,
-    TurnStart,
-    TurnEnd,
-}
-
-enum ModifierType {
-    Buff,
-    Debuff
-}
-
 pub struct Actor {
     name: String,
     action_per_round: u8,
-    tokens: TokenContainer
+    tokens: TokenContainer,
+    triggers: TriggerContainer,
 }
 
 impl Actor {
     fn new(name: String, health: u8, stamina: u8, action_per_round: u8) -> Self {
+        let mut triggers = TriggerContainer::new();
+        let apply_damage = Box::new(ApplyDamageTrigger {});
+        triggers.add_trigger(trigger::TriggerCondition::TurnStart, apply_damage);
         Self {
             name,
             action_per_round,
             tokens: BTreeMap::from([
                 (Token::Health, health),
                 (Token::Stamina, stamina),
-            ])
+            ]),
+            triggers,
         }
     }
 
@@ -72,6 +65,12 @@ impl Actor {
     }
 }
 
+//TODO: Player goes always first - make it more dynamic?
+enum CombatStateChange {
+    Round,
+    Turn,
+}
+
 #[derive(Debug)]
 enum CombatState {
     PlayerTurn(u8),
@@ -79,19 +78,19 @@ enum CombatState {
 }
 
 impl CombatState {
-    fn get_next_state(&self) -> CombatState {
+    fn get_next_state(&self) -> (CombatState, CombatStateChange) {
         match self {
-            Self::PlayerTurn(n) if *n > 1 => Self::PlayerTurn(n-1),
-            Self::PlayerTurn(_) => Self::AiTurn(ACTIONS_PER_ROUND),
-            Self::AiTurn(n) if *n > 1 => Self::AiTurn(n-1),
-            Self::AiTurn(_) => Self::PlayerTurn(ACTIONS_PER_ROUND),
+            Self::PlayerTurn(n) if *n > 1 => (Self::PlayerTurn(n-1), CombatStateChange::Turn),
+            Self::PlayerTurn(_) => (Self::AiTurn(ACTIONS_PER_ROUND), CombatStateChange::Turn),
+            Self::AiTurn(n) if *n > 1 => (Self::AiTurn(n-1), CombatStateChange::Turn),
+            Self::AiTurn(_) => (Self::PlayerTurn(ACTIONS_PER_ROUND), CombatStateChange::Round),
         }
     }
 
-    fn get_turn_order<'a>(&self, player_actor: &'a mut Actor, ai_actor: &'a mut Actor) -> (&'a mut Actor, &'a mut Actor) {
+    fn get_turn_order<'a, T>(&self, player: &'a mut T, ai: &'a mut T) -> (&'a mut T, &'a mut T) {
         match self {
-            Self::PlayerTurn(_) => (player_actor, ai_actor),
-            Self::AiTurn(_) => (ai_actor, player_actor)
+            Self::PlayerTurn(_) => (player, ai),
+            Self::AiTurn(_) => (ai, player)
         }
     }
 }
@@ -121,7 +120,7 @@ async fn main() {
         clear_background(GRAY);
 
         let mut player_actions: [Option<Box<&dyn Action>>; 2] = [None, None];
-        let (mut source, mut target) = combat_state.get_turn_order(&mut player_actor, &mut enemy_actor);
+        let (source, target) = combat_state.get_turn_order(&mut player_actor, &mut enemy_actor);
 
         if let Some(performed_action) = ui::action_clicked(
             under_construction_texture,
@@ -154,14 +153,30 @@ async fn main() {
         };
 
         if let Some(action) = action {
+            source.triggers.execute_triggers(&trigger::TriggerCondition::TurnStart, &mut source.tokens);
+            source.triggers.clean(&trigger::TriggerCondition::TurnStart);
             let (source_effects, target_effects) = action.perform();
             for e in source_effects {
-                e.execute(&mut source);
+                e.execute(&mut source.tokens);
             }
             for e in target_effects {
-                e.execute(&mut target);
+                e.execute(&mut target.tokens);
             }
-            combat_state = combat_state.get_next_state();
+
+            let (new_combat_state, combat_state_change) = combat_state.get_next_state();
+            combat_state = new_combat_state;
+            match combat_state_change {
+                CombatStateChange::Turn => {
+                    source.triggers.execute_triggers(&trigger::TriggerCondition::TurnEnd, &mut source.tokens);
+                    source.triggers.clean(&trigger::TriggerCondition::TurnEnd);
+                },
+                CombatStateChange::Round => {
+                    source.triggers.execute_triggers(&trigger::TriggerCondition::TurnEnd, &mut source.tokens);
+                    source.triggers.clean(&trigger::TriggerCondition::TurnEnd);
+                    source.triggers.execute_triggers(&trigger::TriggerCondition::RoundEnd, &mut source.tokens);
+                    source.triggers.clean(&trigger::TriggerCondition::RoundEnd);
+                }
+            };
         }
 
         draw_text(&format!("{:?}", combat_state), 300.0, 150.0, FONT_SIZE, WHITE);
