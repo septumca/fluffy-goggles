@@ -4,12 +4,8 @@ pub mod spells;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     mod all_together {
         use crate::{actor::{Actor, Buff}, GameData, magic::{cast_effects::CastEffects, spells::PreparedRunes}, cast_spell};
-
-        use super::*;
 
         fn prepare_rune_indexes(runes: &[u8], game_data: &GameData) -> PreparedRunes {
             let mut prepared_runes = PreparedRunes::new();
