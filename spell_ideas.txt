@@ -1,0 +1,8 @@
+- element:
+Necrotic/Decay, Poison, Mind, Force, Illusion
+
+- form
+Projectile, Shell, Ring, Shield,
+
+- Modifier
+Duration, Expand, Multiple

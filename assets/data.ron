@@ -1,25 +1,22 @@
 GameData(
   rune_levels: [
     RuneLevel(
-      count: 3,
-      name: ["Lo", "Ee", "Pal"],
-      description: ["Low", "Medium", "High"]
+      name: ["Lo", "Ee", "Pal", "Sok"],
+      description: ["Low", "Medium", "High", "Extreme high"]
     ),
     RuneLevel(
-      count: 3,
       name: ["Ful", "Des", "Zo"],
       description: ["Fire", "Earth", "Magic"]
     ),
     RuneLevel(
-      count: 2,
       name: ["Ven", "Kath"],
       description: ["Projectile", "Shield"]
     )
   ],
-  spells: [
-    SpellData(rune_indexes: [0, 0], kind: Fireball),
-    SpellData(rune_indexes: [1, 1], kind: EarthShield),
-    SpellData(rune_indexes: [2, 1], kind: Shield),
-    SpellData(rune_indexes: [2, 0], kind: MagicMissile),
+  spell_data: [
+    SpellData(rune_indexes: [0, 0], kind: Firebolt, target: Enemy),
+    SpellData(rune_indexes: [1, 1], kind: EarthShield, target: Caster),
+    SpellData(rune_indexes: [2, 1], kind: Shield, target: Caster),
+    SpellData(rune_indexes: [2, 0], kind: MagicMissile, target: Enemy),
   ],
 )
